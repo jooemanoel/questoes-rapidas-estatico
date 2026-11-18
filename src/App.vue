@@ -1,7 +1,8 @@
 <script setup>
 // Componente raiz: liga o estado (composable) aos componentes de tela.
-import { onMounted, onUnmounted } from "vue";
+import { computed, onMounted, onUnmounted } from "vue";
 import { useQuestionario } from "./composables/useQuestionario.js";
+import EscolhaDisciplina from "./components/EscolhaDisciplina.vue";
 import PlacarSessao from "./components/PlacarSessao.vue";
 import QuestaoItem from "./components/QuestaoItem.vue";
 import CriticaQuestao from "./components/CriticaQuestao.vue";
@@ -9,6 +10,7 @@ import CriticaQuestao from "./components/CriticaQuestao.vue";
 const {
   etapa,
   mensagemErro,
+  todasQuestoes,
   questoes,
   indiceAtual,
   questaoAtual,
@@ -19,11 +21,20 @@ const {
   erros,
   notaLiquida,
   topicoAtual,
+  opcoesDeEstudo,
+  rotuloFiltro,
   carregar,
+  iniciar,
   responder,
   proxima,
   recomecar,
+  trocarDisciplina,
 } = useQuestionario();
+
+// O placar só faz sentido durante uma sessão (e no resultado final).
+const emSessao = computed(() =>
+  ["respondendo", "corrigida", "fim"].includes(etapa.value)
+);
 
 // Atalhos de teclado: C = Certo, E = Errado, Enter = próxima.
 function aoPressionarTecla(evento) {
@@ -53,7 +64,7 @@ onUnmounted(() => {
     <header class="cabecalho">
       <h1>Questões Rápidas</h1>
       <PlacarSessao
-        v-if="questoes.length"
+        v-if="emSessao"
         :acertos="acertos"
         :erros="erros"
         :nota-liquida="notaLiquida"
@@ -70,12 +81,29 @@ onUnmounted(() => {
       <button type="button" class="botao-principal" @click="carregar">Tentar de novo</button>
     </section>
 
-    <p v-else-if="etapa === 'vazio'" class="aviso">
-      Nenhuma questão cadastrada ainda.
-    </p>
+    <EscolhaDisciplina
+      v-else-if="etapa === 'escolhendo'"
+      :grupos="opcoesDeEstudo"
+      :total-geral="todasQuestoes.length"
+      @escolher="iniciar"
+    />
+
+    <section v-else-if="etapa === 'vazio'" class="aviso">
+      <p>Nenhuma questão cadastrada para {{ rotuloFiltro }}.</p>
+      <button type="button" class="botao-principal" @click="trocarDisciplina">
+        Escolher outra disciplina
+      </button>
+    </section>
 
     <template v-else-if="etapa === 'respondendo' || etapa === 'corrigida'">
-      <p class="progresso">Questão {{ indiceAtual + 1 }} de {{ questoes.length }}</p>
+      <div class="barra-sessao">
+        <p class="progresso">
+          Questão {{ indiceAtual + 1 }} de {{ questoes.length }} · {{ rotuloFiltro }}
+        </p>
+        <button type="button" class="botao-link" @click="trocarDisciplina">
+          Trocar disciplina
+        </button>
+      </div>
 
       <QuestaoItem
         :questao="questaoAtual"
@@ -97,11 +125,17 @@ onUnmounted(() => {
 
     <section v-else-if="etapa === 'fim'" class="aviso fim">
       <h2>Sessão concluída</h2>
+      <p class="detalhe">{{ rotuloFiltro }}</p>
       <p>
         Você respondeu {{ questoes.length }} questões:
         {{ acertos }} acertos e {{ erros }} erros (nota líquida {{ notaLiquida }}).
       </p>
-      <button type="button" class="botao-principal" @click="recomecar">Recomeçar</button>
+      <div class="acoes">
+        <button type="button" class="botao-principal" @click="recomecar">Recomeçar</button>
+        <button type="button" class="botao-secundario" @click="trocarDisciplina">
+          Trocar disciplina
+        </button>
+      </div>
     </section>
   </main>
 </template>
