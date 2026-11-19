@@ -20,6 +20,7 @@ const {
   acertos,
   erros,
   notaLiquida,
+  totalRespondidas,
   topicoAtual,
   opcoesDeEstudo,
   rotuloFiltro,
@@ -29,6 +30,7 @@ const {
   proxima,
   recomecar,
   trocarDisciplina,
+  apagarHistorico,
 } = useQuestionario();
 
 // O placar só faz sentido durante uma sessão (e no resultado final).
@@ -85,7 +87,9 @@ onUnmounted(() => {
       v-else-if="etapa === 'escolhendo'"
       :grupos="opcoesDeEstudo"
       :total-geral="todasQuestoes.length"
+      :total-respondidas="totalRespondidas"
       @escolher="iniciar"
+      @apagar-historico="apagarHistorico"
     />
 
     <section v-else-if="etapa === 'vazio'" class="aviso">

@@ -3,7 +3,8 @@
 // quem decide o que acontece em seguida é este arquivo.
 
 import { ref, computed } from "vue";
-import { buscarQuestoes, buscarConteudo } from "../services/api.js";
+import { carregarQuestoes, buscarConteudo } from "../services/api.js";
+import { lerHistorico, registrarResposta, limparHistorico } from "../services/historico.js";
 
 /**
  * A tela está sempre em UMA destas etapas:
@@ -33,6 +34,9 @@ export function useQuestionario() {
   const topicos = ref([]); // lista plana do conteudo.json
   const topicosPorId = ref(new Map());
 
+  // Questões já respondidas neste navegador: { id: { vezes, acertos, ultima } }
+  const historico = ref(lerHistorico());
+
   // ---------- Valores derivados (computed) ----------
   const questaoAtual = computed(() => questoes.value[indiceAtual.value]);
 
@@ -46,6 +50,11 @@ export function useQuestionario() {
 
   // No Cebraspe, cada erro anula um acerto.
   const notaLiquida = computed(() => acertos.value - erros.value);
+
+  /** Quantas das questões existentes já foram respondidas ao menos uma vez. */
+  const totalRespondidas = computed(
+    () => todasQuestoes.value.filter((q) => historico.value[q.id]).length
+  );
 
   /**
    * Opções da tela inicial: cada item do edital (nível 1) com suas
@@ -97,14 +106,15 @@ export function useQuestionario() {
 
     try {
       // As duas buscas são independentes, então rodam em paralelo.
-      const [listaQuestoes, conteudo] = await Promise.all([
-        buscarQuestoes(),
+      const [{ questoes: listaQuestoes }, conteudo] = await Promise.all([
+        carregarQuestoes(), // usa a cópia do navegador se a lista não mudou
         buscarConteudo(),
       ]);
 
       topicos.value = conteudo;
       topicosPorId.value = new Map(conteudo.map((t) => [t.id, t]));
       todasQuestoes.value = listaQuestoes;
+      historico.value = lerHistorico();
 
       etapa.value = "escolhendo";
     } catch (erro) {
@@ -116,8 +126,9 @@ export function useQuestionario() {
   /** Inicia uma sessão com as questões do tópico escolhido (null = todas). */
   function iniciar(idTopico) {
     filtroAtual.value = idTopico;
-    questoes.value = embaralhar(
-      todasQuestoes.value.filter((q) => pertenceAo(q, idTopico))
+    questoes.value = priorizarNaoRespondidas(
+      todasQuestoes.value.filter((q) => pertenceAo(q, idTopico)),
+      historico.value
     );
     reiniciarPlacar();
     etapa.value = questoes.value.length > 0 ? "respondendo" : "vazio";
@@ -129,6 +140,8 @@ export function useQuestionario() {
     respostaDada.value = opcao;
     if (acertou.value) acertos.value++;
     else erros.value++;
+
+    historico.value = registrarResposta(historico.value, questaoAtual.value.id, acertou.value);
 
     etapa.value = "corrigida";
   }
@@ -154,6 +167,11 @@ export function useQuestionario() {
   /** Volta para a tela inicial de escolha. */
   function trocarDisciplina() {
     etapa.value = "escolhendo";
+  }
+
+  /** Esquece quais questões já foram respondidas neste navegador. */
+  function apagarHistorico() {
+    historico.value = limparHistorico();
   }
 
   function reiniciarPlacar() {
@@ -190,6 +208,7 @@ export function useQuestionario() {
     acertos,
     erros,
     notaLiquida,
+    totalRespondidas,
     topicoAtual,
     opcoesDeEstudo,
     rotuloFiltro,
@@ -199,7 +218,18 @@ export function useQuestionario() {
     proxima,
     recomecar,
     trocarDisciplina,
+    apagarHistorico,
   };
+}
+
+/**
+ * Ordena a sessão: primeiro as questões nunca respondidas (em ordem aleatória),
+ * depois as já respondidas, das que foram vistas menos vezes para as mais vistas.
+ * Empates ficam em ordem aleatória (embaralha antes; o sort do JS é estável).
+ */
+function priorizarNaoRespondidas(lista, historico) {
+  const vezes = (q) => historico[q.id]?.vezes ?? 0;
+  return embaralhar(lista).sort((a, b) => vezes(a) - vezes(b));
 }
 
 /** Embaralhamento de Fisher-Yates: devolve uma cópia em ordem aleatória. */
